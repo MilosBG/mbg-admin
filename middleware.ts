@@ -11,9 +11,7 @@ const publicRoutes = [
   "/api/milos-bg/offline",
 ];
 
-export default clerkMiddleware({
-  publicRoutes,
-});
+export default clerkMiddleware({ publicRoutes });
 
 export const config = {
   matcher: [
