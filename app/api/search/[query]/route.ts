@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 type RouteContext = { params: Promise<{ query: string }> };
 
-type ProductFilter = Parameters<typeof Product.find>[0];
+type ProductFilter = Record<string, unknown>;
 
 const createRegex = (value: string) => new RegExp(value, "i");
 
