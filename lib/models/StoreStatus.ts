@@ -10,7 +10,7 @@ export interface StoreStatusDocument extends Document {
 
 const StoreStatusSchema = new Schema<StoreStatusDocument>(
   {
-    storeKey: { type: String, required: true, unique: true },
+    storeKey: { type: String, required: true },
     isOnline: { type: Boolean, default: true },
     offlineMessage: { type: String, default: "offline" },
   },

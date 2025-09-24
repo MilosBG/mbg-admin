@@ -10,17 +10,19 @@ const isPublicRoute = createRouteMatcher([
   "/api/v1/status",
   "/api/v1/store/status",
   "/api/milos-bg/offline",
+  "/sign-in",
+  "/sign-up",
 ]);
 
-export default clerkMiddleware(async (auth, req) => {
+export default clerkMiddleware((auth, req) => {
   if (isPublicRoute(req)) {
     return NextResponse.next();
   }
 
-  const authResponse = await auth();
+  const { userId, redirectToSignIn } = auth();
 
-  if (!authResponse.userId) {
-    return authResponse.redirectToSignIn({ returnBackUrl: req.url });
+  if (!userId) {
+    return redirectToSignIn({ returnBackUrl: req.url });
   }
 
   return NextResponse.next();
