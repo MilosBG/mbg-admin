@@ -52,6 +52,8 @@ export async function POST(
       return new NextResponse(JSON.stringify({ message: "Product not found" }), { status: 404 });
     }
 
+    const shouldFetch = Boolean(updated.fetchToStore);
+
     // Optional: notify the ecommerce store to refresh/sync
     // If the external endpoint is not available, ignore failures.
     try {
