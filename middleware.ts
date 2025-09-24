@@ -1,4 +1,4 @@
-import { authMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 const isPublicRoute = createRouteMatcher([
   "/api/store",
@@ -11,8 +11,11 @@ const isPublicRoute = createRouteMatcher([
   "/api/milos-bg/offline",
 ]);
 
-export default authMiddleware({
-  publicRoutes: isPublicRoute,
+export default clerkMiddleware((auth, req) => {
+  if (!isPublicRoute(req)) {
+    return auth().protect({ unauthorizedFallback: () => Response.redirect(req.url, 302) });
+  }
+  return auth();
 });
 
 export const config = {
