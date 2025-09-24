@@ -54,13 +54,19 @@ export async function POST(req: NextRequest) {
         email: payer?.emailAddress || payer?.email_address || "",
       };
 
-      const shippingAddress = {
-        street: purchaseUnit?.shipping?.address?.addressLine1 ?? purchaseUnit?.shipping?.address?.address_line_1 ?? "",
-        city: purchaseUnit?.shipping?.address?.adminArea2 ?? purchaseUnit?.shipping?.address?.admin_area_2 ?? "",
-        state: purchaseUnit?.shipping?.address?.adminArea1 ?? purchaseUnit?.shipping?.address?.admin_area_1 ?? "",
-        postalCode: purchaseUnit?.shipping?.address?.postalCode ?? purchaseUnit?.shipping?.address?.postal_code ?? "",
-        country: purchaseUnit?.shipping?.address?.countryCode ?? purchaseUnit?.shipping?.address?.country_code ?? "",
-      };
+      const shippingAddress = (() => {
+        const addr = purchaseUnit?.shipping?.address as { addressLine1?: string; address_line_1?: string; adminArea2?: string; admin_area_2?: string; adminArea1?: string; admin_area_1?: string; postalCode?: string; postal_code?: string; countryCode?: string; country_code?: string } | undefined
+        if (!addr) {
+          return { street: '', city: '', state: '', postalCode: '', country: '' }
+        }
+        return {
+          street: addr.addressLine1 ?? addr.address_line_1 ?? '',
+          city: addr.adminArea2 ?? addr.admin_area_2 ?? '',
+          state: addr.adminArea1 ?? addr.admin_area_1 ?? '',
+          postalCode: addr.postalCode ?? addr.postal_code ?? '',
+          country: addr.countryCode ?? addr.country_code ?? '',
+        }
+      })();
 
       const orderItems = (purchaseUnit?.items || []).map((it: any) => {
         let meta: any = {};
