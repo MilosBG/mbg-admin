@@ -41,7 +41,7 @@ export async function POST(_req: NextRequest) {
     for (const [clerkId, orderIds] of map.entries()) {
       const existing = await Customer.findOne({ clerkId })
         .select("name email")
-        .lean();
+        .lean<{ name?: string; email?: string } | null>();
 
       let name = existing?.name || "";
       let email = existing?.email || "";
