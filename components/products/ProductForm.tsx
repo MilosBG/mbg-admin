@@ -229,7 +229,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
                     <FormControl>
                       <Input
                         placeholder="Title"
-                        value={field.value}
+                        value={typeof field.value === "string" ? field.value : String(field.value ?? "")}
                         onChange={(e) => field.onChange(e.target.value)}
                         onKeyDown={handleKeyPress}
                       />
