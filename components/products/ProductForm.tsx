@@ -229,8 +229,11 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
                     <FormControl>
                       <Input
                         placeholder="Title"
+                        name={field.name}
                         value={typeof field.value === "string" ? field.value : String(field.value ?? "")}
                         onChange={(e) => field.onChange(e.target.value)}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
                         onKeyDown={handleKeyPress}
                       />
                     </FormControl>
@@ -249,7 +252,11 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
                     <FormControl>
                       <TextArea
                         placeholder="Description"
-                        {...field}
+                        name={field.name}
+                        value={typeof field.value === "string" ? field.value : String(field.value ?? "")}
+                        onChange={(e) => field.onChange(e.target.value)}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
                         rows={5}
                         onKeyDown={handleKeyPress}
                       />
