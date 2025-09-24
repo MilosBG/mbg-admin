@@ -25,11 +25,16 @@ export async function POST(req: NextRequest) {
     }
 
     await connectToDB();
-    const order = await Order.findById(orderId).select("_id fulfillmentStatus").lean();
+    const order = await Order.findById(orderId)
+      .select("_id fulfillmentStatus")
+      .lean<{ _id: unknown; fulfillmentStatus?: string } | null>();
     if (!order) return new NextResponse("Not found", { status: 404 });
 
+    const orderIdStr = String(order._id);
+    const status = String(order.fulfillmentStatus || "PENDING");
+
     // Broadcast to any connected AutoPrinter clients
-    emitter.emit("order", { orderId: String(order._id), status: String(order.fulfillmentStatus || "PENDING") });
+    emitter.emit("order", { orderId: orderIdStr, status });
 
     return NextResponse.json({ ok: true });
   } catch (e) {
