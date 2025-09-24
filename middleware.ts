@@ -13,7 +13,9 @@ const isPublicRoute = createRouteMatcher([
 
 export default clerkMiddleware((auth, req) => {
   if (!isPublicRoute(req)) {
-    return auth().protect({ unauthorizedFallback: () => Response.redirect(req.url, 302) });
+    const authentication = auth();
+    authentication.redirectToSignIn({ returnBackUrl: req.url });
+    return authentication;
   }
   return auth();
 });
