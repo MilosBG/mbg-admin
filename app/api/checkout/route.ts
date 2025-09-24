@@ -1,7 +1,31 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
-import { payPalClient } from "@/lib/paypal";
+import {
+  CheckoutPaymentIntent,
+  OrderApplicationContextLandingPage,
+  OrderApplicationContextShippingPreference,
+  OrderApplicationContextUserAction,
+  type Item,
+  type Money,
+  type OrderRequest,
+} from "@paypal/paypal-server-sdk";
+import { payPalOrders } from "@/lib/paypal";
+
+type CartItem = {
+  item?: {
+    _id?: unknown;
+    title?: unknown;
+    price?: unknown;
+  };
+  quantity?: unknown;
+  size?: unknown;
+  color?: unknown;
+};
+
+type CheckoutRequestBody = {
+  cartItems?: unknown;
+  customer?: { clerkId?: unknown };
+  shippingOption?: unknown;
+};
 
 function getCors(req: NextRequest) {
   const origin = req.headers.get("origin") || "";
@@ -16,105 +40,123 @@ function getCors(req: NextRequest) {
   };
 }
 
+const toMoneyString = (n: number) => (Math.round(n * 100) / 100).toFixed(2);
+
+const asNumber = (value: unknown, fallback = 0): number => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+};
+
+const asQuantity = (value: unknown): number => {
+  const parsed = Math.trunc(asNumber(value, 1));
+  return parsed > 0 ? parsed : 1;
+};
+
+const toMoneyValue = (amount: number): Money => ({
+  currencyCode: "EUR",
+  value: toMoneyString(amount),
+});
+
+const toPayPalItems = (cartItems: CartItem[]): Item[] =>
+  cartItems.map((ci) => {
+    const price = asNumber(ci.item?.price, 0);
+    const quantity = asQuantity(ci.quantity);
+    const rawId = ci.item?._id;
+    const sku = rawId !== undefined ? String(rawId) : "";
+    const meta: Record<string, unknown> = {};
+    if (sku) meta.productId = sku;
+    if (ci.size) meta.size = ci.size;
+    if (ci.color) meta.color = ci.color;
+
+    return {
+      name: String(ci.item?.title ?? "Item"),
+      unitAmount: toMoneyValue(price),
+      quantity: String(quantity),
+      ...(sku ? { sku } : {}),
+      ...(Object.keys(meta).length ? { description: JSON.stringify(meta) } : {}),
+    };
+  });
+
+const isCartItem = (value: unknown): value is CartItem => {
+  if (!value || typeof value !== "object") return false;
+  return "item" in value && typeof (value as CartItem).item === "object";
+};
+
 export async function OPTIONS(req: NextRequest) {
   return NextResponse.json({}, { headers: getCors(req) });
 }
 
-const toMoney = (n: number) => (Math.round(n * 100) / 100).toFixed(2);
-
-function toPayPalItems(cartItems: any[]) {
-  return cartItems.map((ci) => ({
-    name: String(ci.item.title ?? "Item"),
-    unit_amount: {
-      currency_code: "EUR",
-      value: toMoney(Number(ci.item.price || 0)),
-    },
-    quantity: String(Number(ci.quantity || 1)),
-    sku: String(ci.item._id),
-    description: JSON.stringify({
-      productId: ci.item._id,
-      ...(ci.size && { size: ci.size }),
-      ...(ci.color && { color: ci.color }),
-    }),
-  }));
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { cartItems, customer, shippingOption } = body || {};
-    if (!Array.isArray(cartItems) || !customer?.clerkId) {
+    const body = (await req.json()) as CheckoutRequestBody | null;
+    const rawItems = Array.isArray(body?.cartItems) ? body?.cartItems : [];
+    const cartItems = rawItems.filter(isCartItem);
+    const clerkId = body?.customer?.clerkId;
+
+    if (!cartItems.length || typeof clerkId !== "string" || !clerkId) {
       return new NextResponse("Not Enough Data To Checkout", { status: 400 });
     }
 
     const items = toPayPalItems(cartItems);
 
-    const itemSubTotal = cartItems.reduce(
-      (sum: number, ci: any) =>
-        sum + Number(ci.item.price || 0) * Number(ci.quantity || 1),
-      0,
-    );
+    const itemSubTotal = cartItems.reduce((sum, ci) => {
+      const price = asNumber(ci.item?.price, 0);
+      const quantity = asQuantity(ci.quantity);
+      return sum + price * quantity;
+    }, 0);
 
-    const normalizedShip = shippingOption === "EXPRESS" ? "EXPRESS" : "FREE";
+    const normalizedShip = String(body?.shippingOption || "").toUpperCase() === "EXPRESS" ? "EXPRESS" : "FREE";
     const shippingMap = {
       FREE: { id: "FREE_DELIVERY", label: "FREE DELIVERY", amount: 0 },
-      EXPRESS: {
-        id: "EXPRESS_DELIVERY",
-        label: "EXPRESS DELIVERY",
-        amount: 20,
-      },
+      EXPRESS: { id: "EXPRESS_DELIVERY", label: "EXPRESS DELIVERY", amount: 20 },
     } as const;
 
     const chosen = shippingMap[normalizedShip];
     const amountValue = itemSubTotal + chosen.amount;
 
-    // Build PayPal order
-const { default: paypal } = await import("@paypal/checkout-server-sdk");
-// @ts-ignore
-const createReq = new paypal.orders.OrdersCreateRequest();
-createReq.headers["Prefer"] = "return=representation";
-
-// Build the body separately and cast to any so TS stops flagging valid fields
-const orderBody: any = {
-  intent: "CAPTURE",
-  purchase_units: [
-    {
-      reference_id: String(customer.clerkId),
-      custom_id: JSON.stringify({ shippingRate: chosen.id }),
-      amount: {
-        currency_code: "EUR",
-        value: toMoney(amountValue),
-        breakdown: {
-          item_total: { currency_code: "EUR", value: toMoney(itemSubTotal) },
-          shipping: { currency_code: "EUR", value: toMoney(chosen.amount) },
+    const orderRequest: OrderRequest = {
+      intent: CheckoutPaymentIntent.Capture,
+      purchaseUnits: [
+        {
+          referenceId: clerkId,
+          customId: JSON.stringify({ shippingRate: chosen.id }),
+          amount: {
+            currencyCode: "EUR",
+            value: toMoneyString(amountValue),
+            breakdown: {
+              itemTotal: toMoneyValue(itemSubTotal),
+              shipping: toMoneyValue(chosen.amount),
+            },
+          },
+          ...(items.length ? { items } : {}),
         },
+      ],
+      applicationContext: {
+        brandName: "Milos BG",
+        landingPage: OrderApplicationContextLandingPage.NoPreference,
+        userAction: OrderApplicationContextUserAction.PayNow,
+        shippingPreference: OrderApplicationContextShippingPreference.GetFromFile,
+        returnUrl: `${process.env.ECOMMERCE_STORE_URL}/payment_success`,
+        cancelUrl: `${process.env.ECOMMERCE_STORE_URL}/the-hoop`,
       },
-      items, // PayPal supports this; SDK’s types are just behind
-      shipping: { method: chosen.label },
-    },
-  ],
-  application_context: {
-    brand_name: "Milos BG",
-    landing_page: "NO_PREFERENCE",
-    user_action: "PAY_NOW",
-    shipping_preference: "GET_FROM_FILE",
-    return_url: `${process.env.ECOMMERCE_STORE_URL}/payment_success`,
-    cancel_url: `${process.env.ECOMMERCE_STORE_URL}/the-hoop`,
-  },
-};
+    };
 
-createReq.requestBody(orderBody);
-const order = await payPalClient.execute(createReq);
+    const { result: order } = await payPalOrders.createOrder({
+      body: orderRequest,
+      prefer: "return=representation",
+    });
 
-    const approve = order.result.links?.find(
-      (l: any) => l.rel === "approve",
-    )?.href;
+    const approve = order.links?.find((link) => link.rel === "approve")?.href;
     if (!approve) {
       return new NextResponse("No approve link from PayPal", { status: 502 });
     }
 
     return NextResponse.json(
-      { id: order.result.id, approveUrl: approve },
+      { id: order.id, approveUrl: approve },
       { headers: getCors(req) },
     );
   } catch (err) {
@@ -122,66 +164,3 @@ const order = await payPalClient.execute(createReq);
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
-
-// /* eslint-disable @typescript-eslint/no-explicit-any */
-// import { NextRequest, NextResponse } from "next/server";
-// import Stripe from "stripe";
-
-// export const stripe = new Stripe(process.env.NEXT_PUBLIC_STRIPE_SECRET_KEY!, {
-//   typescript: true,
-// });
-
-// const corsHeaders = {
-//   "Access-Control-Allow-Origin": "*",
-//   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-//   "Access-Control-Allow-Headers": "Content-Type, Authorization",
-// };
-
-// export async function OPTIONS() {
-//   return NextResponse.json({}, { headers: corsHeaders });
-// }
-
-// export async function POST(req: NextRequest) {
-//   try {
-//     const { cartItems, customer } = await req.json();
-
-//     if (!cartItems || !customer) {
-//       return new NextResponse("Not Enough Data To Checkout", { status: 400 });
-//     }
-
-//     const session = await stripe.checkout.sessions.create({
-//       payment_method_types: ["card"],
-//       mode: "payment",
-//       shipping_address_collection: {
-//         allowed_countries: ["FR", "ES", "BE", "DE"],
-//       },
-//       shipping_options: [
-//         { shipping_rate: "shr_1S11TGLwQY76oKSOLjY4EpzF" },
-//         { shipping_rate: "shr_1S11UULwQY76oKSO6nfcORVT" },
-//       ],
-//       line_items: cartItems.map((cartItem: any) => ({
-//         price_data: {
-//           currency: "eur",
-//           product_data: {
-//             name: cartItem.item.title,
-//             metadata: {
-//               productId: cartItem.item._id,
-//               ...(cartItem.size && { size: cartItem.size }),
-//               ...(cartItem.color && { color: cartItem.color }),
-//             },
-//           },
-//           unit_amount: cartItem.item.price * 100,
-//         },
-//         quantity: cartItem.quantity,
-//       })),
-//       client_reference_id: customer.clerkId,
-//       success_url: `${process.env.ECOMMERCE_STORE_URL}/payment_success`,
-//       cancel_url: `${process.env.ECOMMERCE_STORE_URL}/cart`,
-//     });
-
-//     return NextResponse.json(session, { headers: corsHeaders });
-//   } catch (err) {
-//     console.log("[chechout_POST]", err);
-//     return new NextResponse("Internal Server Error", { status: 500 });
-//   }
-// }

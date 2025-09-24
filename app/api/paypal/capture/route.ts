@@ -1,7 +1,7 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
-import { payPalClient } from "@/lib/paypal";
+import { ApiError } from "@paypal/paypal-server-sdk";
+import { payPalOrders } from "@/lib/paypal";
 import { connectToDB } from "@/lib/mongoDB";
 import Order from "@/lib/models/Order";
 import Product from "@/lib/models/Product";
@@ -50,34 +50,30 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const { default: paypal } = await import("@paypal/checkout-server-sdk");
-
     // 1) Try to capture (idempotent-friendly)
     let captureOK = false;
     let capturePayload: any = null;
 
     try {
-      // @ts-ignore
-      const capReq = new paypal.orders.OrdersCaptureRequest(orderId);
-      capReq.requestBody({ payment_source: { paypal: {} } } as any);
-      const capRes = await payPalClient.execute(capReq);
-      capturePayload = capRes?.result || null;
+      const captureRes = await payPalOrders.captureOrder({
+        id: orderId,
+        body: { paymentSource: { paypal: {} } },
+        prefer: "return=representation",
+      });
+      capturePayload = captureRes.result;
       captureOK = true;
     } catch (e: any) {
-      const issue = e?.result?.details?.[0]?.issue;
+      const issue = (e instanceof ApiError ? e.result?.details?.[0]?.issue : e?.result?.details?.[0]?.issue) || "";
       if (issue !== "ORDER_ALREADY_CAPTURED") {
         console.error("[paypal_capture] capture error:", jsonify(e));
       }
-      // continue; we’ll GET the order next
+      // continue; we'll GET the order next
     }
 
     // 2) Get full order details
-    // @ts-ignore
-    const getReq = new paypal.orders.OrdersGetRequest(orderId);
-    const orderRes = await payPalClient.execute(getReq);
-    const ppOrder: any = orderRes.result;
+    const { result: ppOrder } = await payPalOrders.getOrder({ id: orderId });
 
-    const status = String(ppOrder?.status || "");
+    const status = String(ppOrder.status || "");
     if (!captureOK && status !== "COMPLETED") {
       return new NextResponse(
         JSON.stringify({ error: "CAPTURE_NOT_COMPLETED", status, capture: capturePayload }),
@@ -86,37 +82,39 @@ export async function POST(req: NextRequest) {
     }
 
     // 3) Map fields
-    const pu = ppOrder?.purchase_units?.[0] ?? {};
-    const payer = ppOrder?.payer ?? {};
-    const clerkId = String(pu?.reference_id || "");
+    const purchaseUnit = ppOrder.purchaseUnits?.[0];
+    const payer = (ppOrder.payer || {}) as any;
+    const clerkId = String(purchaseUnit?.referenceId || "");
 
     const shippingAddress = {
-      street: pu?.shipping?.address?.address_line_1 ?? "",
-      city: pu?.shipping?.address?.admin_area_2 ?? "",
-      state: pu?.shipping?.address?.admin_area_1 ?? "",
-      postalCode: pu?.shipping?.address?.postal_code ?? "",
-      country: pu?.shipping?.address?.country_code ?? "",
+      street: purchaseUnit?.shipping?.address?.addressLine1 ?? purchaseUnit?.shipping?.address?.address_line_1 ?? "",
+      city: purchaseUnit?.shipping?.address?.adminArea2 ?? purchaseUnit?.shipping?.address?.admin_area_2 ?? "",
+      state: purchaseUnit?.shipping?.address?.adminArea1 ?? purchaseUnit?.shipping?.address?.admin_area_1 ?? "",
+      postalCode: purchaseUnit?.shipping?.address?.postalCode ?? purchaseUnit?.shipping?.address?.postal_code ?? "",
+      country: purchaseUnit?.shipping?.address?.countryCode ?? purchaseUnit?.shipping?.address?.country_code ?? "",
     };
 
-    const orderItems = (pu?.items || []).map((it: any) => {
+    const orderItems = (purchaseUnit?.items || []).map((it: any) => {
       let meta: any = {};
-      try { meta = JSON.parse(it.description || "{}"); } catch {}
+      try {
+        meta = JSON.parse(it.description || "{}");
+      } catch {}
       return {
         product: meta.productId,
         color: meta.color || "N/A",
-        size:  meta.size  || "N/A",
+        size: meta.size || "N/A",
         quantity: Number(it.quantity || 1),
       };
     });
 
     let shippingRate = "FREE_DELIVERY";
     try {
-      const c = JSON.parse(pu?.custom_id || "{}");
+      const c = JSON.parse(purchaseUnit?.customId || (purchaseUnit as any)?.custom_id || "{}");
       if (typeof c?.shippingRate === "string") shippingRate = c.shippingRate;
     } catch {}
 
-    const totalAmount = Number(pu?.amount?.value ?? 0);
-    const paypalOrderId = String(ppOrder?.id || orderId);
+    const totalAmount = Number(purchaseUnit?.amount?.value ?? 0);
+    const paypalOrderId = String(ppOrder.id || orderId);
 
     // 4) Persist order (idempotent)
     await connectToDB();
@@ -199,76 +197,79 @@ export async function POST(req: NextRequest) {
 
     // 5) Upsert customer + link order
     // Prefer clerkId; if missing, fall back to payer email.
-// ---- Customer upsert (bullet-proof) ----
+    const dbName = mongoose.connection?.name;
+    console.log("[capture] DB:", dbName);
 
-const dbName = mongoose.connection?.name;
-console.log("[capture] DB:", dbName);
+    const rawClerkId = typeof clerkId === "string" ? clerkId.trim() : "";
+    let emailLc = String(payer?.emailAddress || payer?.email_address || "").toLowerCase();
+    let nameFull = [
+      payer?.name?.givenName || payer?.name?.given_name,
+      payer?.name?.surname,
+    ]
+      .filter(Boolean)
+      .join(" ");
 
-const rawClerkId = typeof clerkId === "string" ? clerkId.trim() : "";
-let emailLc = (payer?.email_address || "").toLowerCase();
-let nameFull = [payer?.name?.given_name, payer?.name?.surname].filter(Boolean).join(" ");
-
-// If PayPal doesn't provide name/email but we have a Clerk ID, enrich from Clerk
-if (rawClerkId && (!nameFull || !emailLc)) {
-  try {
-    const secret = process.env.CLERK_SECRET_KEY;
-    if (secret) {
-      const res = await fetch(`https://api.clerk.com/v1/users/${encodeURIComponent(rawClerkId)}` as any, {
-        headers: { Authorization: `Bearer ${secret}` },
-        cache: "no-store",
-      } as any);
-      if (res.ok) {
-        const u: any = await res.json();
-        const n = [u?.first_name, u?.last_name].filter(Boolean).join(" ");
-        const primaryEmailId = u?.primary_email_address_id;
-        const e = (u?.email_addresses || []).find((x: any) => x.id === primaryEmailId)?.email_address || u?.email_addresses?.[0]?.email_address || "";
-        if (!nameFull && n) nameFull = n;
-        if (!emailLc && e) emailLc = String(e).toLowerCase();
-      }
+    // If PayPal doesn't provide name/email but we have a Clerk ID, enrich from Clerk
+    if (rawClerkId && (!nameFull || !emailLc)) {
+      try {
+        const secret = process.env.CLERK_SECRET_KEY;
+        if (secret) {
+          const res = await fetch(`https://api.clerk.com/v1/users/${encodeURIComponent(rawClerkId)}` as any, {
+            headers: { Authorization: `Bearer ${secret}` },
+            cache: "no-store",
+          } as any);
+          if (res.ok) {
+            const u: any = await res.json();
+            const n = [u?.first_name, u?.last_name].filter(Boolean).join(" ");
+            const primaryEmailId = u?.primary_email_address_id;
+            const e = (u?.email_addresses || []).find((x: any) => x.id === primaryEmailId)?.email_address || u?.email_addresses?.[0]?.email_address || "";
+            if (!nameFull && n) nameFull = n;
+            if (!emailLc && e) emailLc = String(e).toLowerCase();
+          }
+        }
+      } catch {}
     }
-  } catch {}
-}
 
-const filter =
-  rawClerkId ? { clerkId: rawClerkId } :
-  emailLc    ? { email: emailLc } :
-  null;
+    const filter =
+      rawClerkId ? { clerkId: rawClerkId } :
+      emailLc    ? { email: emailLc } :
+      null;
 
-console.log("[capture] customer filter:", filter);
+    console.log("[capture] customer filter:", filter);
 
-if (filter) {
-  const update: any = {
-    $setOnInsert: {
-      ...(rawClerkId && { clerkId: rawClerkId }),
-      orders: [], // seed so $addToSet always works
-    },
-    $addToSet: { orders: savedOrder._id },
-    $set: {
-      ...(nameFull && { name: nameFull }),
-      ...(emailLc && { email: emailLc }),
-    },
-  };
+    if (filter) {
+      const update: any = {
+        $setOnInsert: {
+          ...(rawClerkId && { clerkId: rawClerkId }),
+          orders: [], // seed so $addToSet always works
+        },
+        $addToSet: { orders: savedOrder._id },
+        $set: {
+          ...(nameFull && { name: nameFull }),
+          ...(emailLc && { email: emailLc }),
+        },
+      };
 
-  try {
-    const wr = await Customer.updateOne(filter, update, {
-      upsert: true,
-      setDefaultsOnInsert: true,
-      runValidators: false,
-    });
-    console.log("[capture] customer write:", {
-      matched: wr.matchedCount,
-      modified: wr.modifiedCount,
-      upsertedId: wr.upsertedId?.toString?.() || wr.upsertedId,
-    });
+      try {
+        const wr = await Customer.updateOne(filter, update, {
+          upsert: true,
+          setDefaultsOnInsert: true,
+          runValidators: false,
+        });
+        console.log("[capture] customer write:", {
+          matched: wr.matchedCount,
+          modified: wr.modifiedCount,
+          upsertedId: wr.upsertedId?.toString?.() || wr.upsertedId,
+        });
 
-    const verify = await Customer.findOne(filter).select("_id clerkId email orders").lean();
-    console.log("[capture] customer verify:", verify);
-  } catch (e: any) {
-    console.error("[capture] customer upsert ERROR", { code: e?.code, message: e?.message });
-  }
-} else {
-  console.warn("[capture] NO clerkId or email from PayPal order.", { clerkId: rawClerkId, email: emailLc });
-}
+        const verify = await Customer.findOne(filter).select("_id clerkId email orders").lean();
+        console.log("[capture] customer verify:", verify);
+      } catch (e: any) {
+        console.error("[capture] customer upsert ERROR", { code: e?.code, message: e?.message });
+      }
+    } else {
+      console.warn("[capture] NO clerkId or email from PayPal order.", { clerkId: rawClerkId, email: emailLc });
+    }
 
     return NextResponse.json(
       {

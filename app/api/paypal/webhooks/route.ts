@@ -1,7 +1,6 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
-import { payPalClient } from "@/lib/paypal";
+import { payPalOrders, verifyWebhookSignature } from "@/lib/paypal";
 import { connectToDB } from "@/lib/mongoDB";
 import Order from "@/lib/models/Order";
 import Product from "@/lib/models/Product";
@@ -13,63 +12,61 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const rawBody = await req.text();
-
-    const transmissionId = req.headers.get("paypal-transmission-id")!;
-    const timestamp = req.headers.get("paypal-transmission-time")!;
-    const webhookId = process.env.PAYPAL_WEBHOOK_ID!;
-    const certUrl = req.headers.get("paypal-cert-url")!;
-    const authAlgo = req.headers.get("paypal-auth-algo")!;
-    const transmissionSig = req.headers.get("paypal-transmission-sig")!;
-
-    const { default: paypal } = await import("@paypal/checkout-server-sdk");
-    // @ts-ignore
-    const verifyReq = new paypal.webhooks.VerifyWebhookSignatureRequest();
-    verifyReq.requestBody({
-      auth_algo: authAlgo,
-      cert_url: certUrl,
-      transmission_id: transmissionId,
-      transmission_sig: transmissionSig,
-      transmission_time: timestamp,
-      webhook_id: webhookId,
-      webhook_event: JSON.parse(rawBody),
-    });
-
-    const verifyRes = await payPalClient.execute(verifyReq);
-    if (verifyRes.result.verification_status !== "SUCCESS") {
-      return new NextResponse("Invalid webhook", { status: 400 });
+    const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+    if (!webhookId) {
+      return new NextResponse("Webhook not configured", { status: 500 });
     }
 
     const event = JSON.parse(rawBody);
+
+    const verification = await verifyWebhookSignature({
+      authAlgo: req.headers.get("paypal-auth-algo") || "",
+      certUrl: req.headers.get("paypal-cert-url") || "",
+      transmissionId: req.headers.get("paypal-transmission-id") || "",
+      transmissionSig: req.headers.get("paypal-transmission-sig") || "",
+      transmissionTime: req.headers.get("paypal-transmission-time") || "",
+      webhookId,
+      webhookEvent: event,
+    });
+
+    if (verification.verification_status !== "SUCCESS") {
+      return new NextResponse("Invalid webhook", { status: 400 });
+    }
 
     if (event.event_type === "PAYMENT.CAPTURE.COMPLETED") {
       const orderId =
         event.resource?.supplementary_data?.related_ids?.order_id ||
         event.resource?.id;
 
-      // Get the full order
-      // @ts-ignore
-      const getReq = new paypal.orders.OrdersGetRequest(orderId);
-      const orderRes = await payPalClient.execute(getReq);
-      const pu = orderRes.result.purchase_units?.[0];
-      const payer = orderRes.result.payer;
+      if (!orderId) {
+        return new NextResponse("Missing order identifier", { status: 202 });
+      }
+
+      const { result: order } = await payPalOrders.getOrder({ id: orderId });
+      const purchaseUnit = order.purchaseUnits?.[0];
+      const payer = (order.payer || {}) as any;
 
       const customerInfo = {
-        clerkId: pu?.reference_id || "",
-        name: [payer?.name?.given_name, payer?.name?.surname].filter(Boolean).join(" "),
-        email: payer?.email_address || "",
+        clerkId: purchaseUnit?.referenceId || "",
+        name: [payer?.name?.givenName || payer?.name?.given_name, payer?.name?.surname]
+          .filter(Boolean)
+          .join(" "),
+        email: payer?.emailAddress || payer?.email_address || "",
       };
 
       const shippingAddress = {
-        street: pu?.shipping?.address?.address_line_1 || "",
-        city: pu?.shipping?.address?.admin_area_2 || "",
-        state: pu?.shipping?.address?.admin_area_1 || "",
-        postalCode: pu?.shipping?.address?.postal_code || "",
-        country: pu?.shipping?.address?.country_code || "",
+        street: purchaseUnit?.shipping?.address?.addressLine1 ?? purchaseUnit?.shipping?.address?.address_line_1 ?? "",
+        city: purchaseUnit?.shipping?.address?.adminArea2 ?? purchaseUnit?.shipping?.address?.admin_area_2 ?? "",
+        state: purchaseUnit?.shipping?.address?.adminArea1 ?? purchaseUnit?.shipping?.address?.admin_area_1 ?? "",
+        postalCode: purchaseUnit?.shipping?.address?.postalCode ?? purchaseUnit?.shipping?.address?.postal_code ?? "",
+        country: purchaseUnit?.shipping?.address?.countryCode ?? purchaseUnit?.shipping?.address?.country_code ?? "",
       };
 
-      const orderItems = (pu?.items || []).map((it: any) => {
+      const orderItems = (purchaseUnit?.items || []).map((it: any) => {
         let meta: any = {};
-        try { meta = JSON.parse(it.description || "{}"); } catch {}
+        try {
+          meta = JSON.parse(it.description || "{}");
+        } catch {}
         return {
           product: meta.productId,
           color: meta.color || "N/A",
@@ -80,12 +77,14 @@ export async function POST(req: NextRequest) {
 
       const shippingRate = (() => {
         try {
-          const c = JSON.parse(pu?.custom_id || "{}");
+          const c = JSON.parse(purchaseUnit?.customId || (purchaseUnit as any)?.custom_id || "{}");
           return c.shippingRate || "FREE_DELIVERY";
-        } catch { return "FREE_DELIVERY"; }
+        } catch {
+          return "FREE_DELIVERY";
+        }
       })();
 
-      const totalAmount = Number(pu?.amount?.value || 0);
+      const totalAmount = Number(purchaseUnit?.amount?.value || 0);
 
       await connectToDB();
       const newOrder = new Order({

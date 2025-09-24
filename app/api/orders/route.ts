@@ -1,9 +1,8 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable prefer-const */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Customer from "@/lib/models/Customer";
 import Order from "@/lib/models/Order";
-import { payPalClient } from "@/lib/paypal";
+import { payPalOrders } from "@/lib/paypal";
 import { connectToDB } from "@/lib/mongoDB";
 
 import { NextRequest, NextResponse } from "next/server";
@@ -61,13 +60,12 @@ export const GET = async (req: NextRequest) => {
         // 3) Enrich from PayPal if still missing and we have a PayPal order id
         if ((!name || !email) && (order as any)?.paypalOrderId) {
           try {
-            const { default: paypal } = await import("@paypal/checkout-server-sdk");
-            // @ts-ignore
-            const getReq = new paypal.orders.OrdersGetRequest((order as any).paypalOrderId);
-            const getRes = await payPalClient.execute(getReq);
-            const payer = getRes?.result?.payer || {};
-            const n = [payer?.name?.given_name, payer?.name?.surname].filter(Boolean).join(" ");
-            const e = payer?.email_address || "";
+            const { result: paypalOrder } = await payPalOrders.getOrder({ id: String((order as any).paypalOrderId) });
+            const payer = paypalOrder.payer || {};
+            const n = [payer?.name?.givenName || payer?.name?.given_name, payer?.name?.surname]
+              .filter(Boolean)
+              .join(" ");
+            const e = payer?.emailAddress || payer?.email_address || "";
             if (!name && n) name = n;
             if (!email && e) email = String(e).toLowerCase();
           } catch {}
