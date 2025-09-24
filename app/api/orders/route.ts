@@ -66,7 +66,8 @@ export const GET = async (req: NextRequest) => {
             const n = [payerName?.givenName || payerName?.given_name, payerName?.surname]
               .filter(Boolean)
               .join(" ");
-            const e = payer?.emailAddress || payer?.email_address || "";
+            const payerEmail = payer as { emailAddress?: string; email_address?: string }
+            const e = payerEmail?.emailAddress || payerEmail?.email_address || "";
             if (!name && n) name = n;
             if (!email && e) email = String(e).toLowerCase();
           } catch {}
