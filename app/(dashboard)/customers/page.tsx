@@ -13,6 +13,16 @@ export const dynamic = "force-dynamic";
 
 
 
+type LeanCustomer = {
+  clerkId?: string
+  name?: string
+  email?: string
+}
+
+type OrderIdDoc = {
+  _id: unknown
+}
+
 const Customers = async () => {
   await connectToDB()
 
@@ -23,7 +33,7 @@ const Customers = async () => {
   // 2) For each id, ensure there is a Customer doc; enrich from Clerk when possible
   const secret = process.env.CLERK_SECRET_KEY
   for (const id of distinctIds) {
-    const existing = await Customer.findOne({ clerkId: id }).select('clerkId name email').lean()
+    const existing = await Customer.findOne({ clerkId: id }).select('clerkId name email').lean<LeanCustomer>()
     if (existing && existing.name && existing.email) continue
 
     let name = existing?.name || ''
@@ -46,8 +56,8 @@ const Customers = async () => {
     }
 
     // Also link this customer's existing orders
-    const orderIds = await Order.find({ customerClerkId: id }).select('_id').lean()
-    const ids = orderIds.map((o: any) => o._id)
+    const orderIds = await Order.find({ customerClerkId: id }).select('_id').lean<OrderIdDoc[]>()
+    const ids = orderIds.map((o) => o._id)
 
     const update: any = {
       $setOnInsert: { clerkId: id },
@@ -63,9 +73,9 @@ const Customers = async () => {
   }
 
   // 3) Return only plain, serializable fields for the client table
-  const docs = await Customer.find().sort({ createdAt: 'desc' }).select('clerkId name email').lean()
+  const docs = await Customer.find().sort({ createdAt: 'desc' }).select('clerkId name email').lean<LeanCustomer[]>()
 
-  const customers: CustomerType[] = (docs || []).map((d: any) => ({
+  const customers: CustomerType[] = (docs || []).map((d) => ({
     clerkId: String(d?.clerkId || ''),
     name: (d?.name && String(d.name).trim()) || '',
     email: (d?.email && String(d.email).trim()) || '',
