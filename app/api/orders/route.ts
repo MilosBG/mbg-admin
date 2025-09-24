@@ -62,7 +62,8 @@ export const GET = async (req: NextRequest) => {
           try {
             const { result: paypalOrder } = await payPalOrders.getOrder({ id: String((order as any).paypalOrderId) });
             const payer = paypalOrder.payer || {};
-            const n = [payer?.name?.givenName || payer?.name?.given_name, payer?.name?.surname]
+            const payerName = payer?.name as { givenName?: string; surname?: string; given_name?: string } | undefined
+            const n = [payerName?.givenName || payerName?.given_name, payerName?.surname]
               .filter(Boolean)
               .join(" ");
             const e = payer?.emailAddress || payer?.email_address || "";
