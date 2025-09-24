@@ -1,8 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import AutoPrintOnLoad from "@/components/orders/AutoPrintOnLoad";
+
+
 // import QRCode from "@/components/orders/QRCode";
 import { format } from "date-fns";
+
+export const dynamic = "force-dynamic";
+
 
 type OrderDetailsRes = {
   orderDetails: any;
@@ -113,7 +118,7 @@ export default async function PrintOrderPage({ params }: { params: Promise<{ ord
               </div>
               {tn ? (
                 <div style={{ marginTop: 8 }}>
-                  <div className="label" style={{ marginBottom: 4 }}>QR Tracking code{" "}</div>
+                  <div className="label" style={{ marginBottom: 4 }}>LINK Tracking code{" "}</div>
                   {/* <div style={{ display: "inline-block", padding: 4, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 4 }}>
                     <QRCode value={trackingUrl(tn)} size={160} />
                   </div> */}
@@ -131,7 +136,7 @@ export default async function PrintOrderPage({ params }: { params: Promise<{ ord
                 <div className="label">Order Date{" "}</div>
                 <div className="value">{format(created, "MMM d, yyyy HH:mm")}</div>
                 <div className="label">Total Amount{" "}</div>
-                <div className="value">{orderDetails?.totalAmount ?? 0}</div>
+                <div className="value">€ {orderDetails?.totalAmount ?? 0}</div>
               </div>
             </div>
           </div>
