@@ -1,6 +1,6 @@
-import { clerkMiddleware } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-const publicRoutes = [
+const isPublicRoute = createRouteMatcher([
   "/api/store",
   "/api/store/status",
   "/api/storefront/status",
@@ -9,13 +9,17 @@ const publicRoutes = [
   "/api/v1/status",
   "/api/v1/store/status",
   "/api/milos-bg/offline",
-];
+]);
 
-export default clerkMiddleware({ publicRoutes });
+export default clerkMiddleware((auth, req) => {
+  if (!isPublicRoute(req)) {
+    auth().protect();
+  }
+});
 
 export const config = {
   matcher: [
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/((?!_next|[^?]*\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
     "/(api|trpc)(.*)",
   ],
 };
