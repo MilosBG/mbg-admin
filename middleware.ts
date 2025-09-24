@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 const isPublicRoute = createRouteMatcher([
@@ -11,13 +12,18 @@ const isPublicRoute = createRouteMatcher([
   "/api/milos-bg/offline",
 ]);
 
-export default clerkMiddleware((auth, req) => {
-  if (!isPublicRoute(req)) {
-    const authentication = auth();
-    authentication.redirectToSignIn({ returnBackUrl: req.url });
-    return authentication;
+export default clerkMiddleware(async (auth, req) => {
+  if (isPublicRoute(req)) {
+    return NextResponse.next();
   }
-  return auth();
+
+  const authResponse = await auth();
+
+  if (!authResponse.userId) {
+    return authResponse.redirectToSignIn({ returnBackUrl: req.url });
+  }
+
+  return NextResponse.next();
 });
 
 export const config = {
