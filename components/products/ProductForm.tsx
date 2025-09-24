@@ -37,6 +37,9 @@ interface ProductFormProps {
   initialData?: ProductType | null; //Must have "?" to make it optional
 }
 
+const toStringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+
 const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
   const router = useRouter();
 
@@ -275,16 +278,18 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
                     <Label>Image</Label>
                     <FormControl>
                       <ImageUpload
-                        value={field.value ?? []}
+                        value={toStringArray(field.value)}
                         onChange={(url: string) => {
-                          const current = form.getValues("media") ?? [];
+                          const currentRaw = form.getValues("media");
+                          const current = Array.isArray(currentRaw) ? currentRaw : [];
                           form.setValue("media", [...current, url], {
                             shouldDirty: true,
                             shouldTouch: true,
                           });
                         }}
                         onRemove={(url: string) => {
-                          const current = form.getValues("media") ?? [];
+                          const currentRaw = form.getValues("media");
+                          const current = Array.isArray(currentRaw) ? currentRaw : [];
                           form.setValue(
                             "media",
                             current.filter((img) => img !== url),
@@ -309,8 +314,11 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
                       <Input
                         type="number"
                         placeholder="Price"
-                        value={field.value}
+                        value={typeof field.value === "number" ? field.value : Number(field.value ?? 0)}
+                        name={field.name}
                         onChange={(e) => field.onChange(Number(e.target.value))}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
                         onKeyDown={handleKeyPress}
                       />
                     </FormControl>
@@ -330,10 +338,13 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
                       <Input
                         type="number"
                         placeholder="Expense"
-                        value={field.value}
+                        value={typeof field.value === "number" ? field.value : Number(field.value ?? 0)}
+                        name={field.name}
                         onChange={(e) =>
                           field.onChange(Math.max(0, Number(e.target.value)))
                         }
+                        onBlur={field.onBlur}
+                        ref={field.ref}
                         onKeyDown={handleKeyPress}
                       />
                     </FormControl>
@@ -354,17 +365,15 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
                         <MultiSelect
                           placeholder="Chapters"
                           chapters={chapters}
-                          value={field.value}
-                          onChange={(_id) =>
-                            field.onChange([...field.value, _id])
-                          }
-                          onRemove={(idToRemove) =>
-                            field.onChange([
-                              ...field.value.filter(
-                                (chapterId) => chapterId !== idToRemove,
-                              ),
-                            ])
-                          }
+                          value={toStringArray(field.value)}
+                          onChange={(_id) => {
+                            const current = toStringArray(field.value);
+                            field.onChange([...current, _id]);
+                          }}
+                          onRemove={(idToRemove) => {
+                            const current = toStringArray(field.value);
+                            field.onChange(current.filter((chapterId) => chapterId !== idToRemove));
+                          }}
                         />
                       </FormControl>
                       <FormMessage />
@@ -383,7 +392,11 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
                     <FormControl>
                       <Input
                         placeholder="Category"
-                        {...field}
+                        name={field.name}
+                        value={typeof field.value === "string" ? field.value : String(field.value ?? "")}
+                        onChange={(e) => field.onChange(e.target.value)}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
                         onKeyDown={handleKeyPress}
                       />
                     </FormControl>
@@ -403,17 +416,15 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
                     <FormControl>
                       <MultiText
                         placeholder="Sizes"
-                        value={field.value}
-                        onChange={(size) =>
-                          field.onChange([...field.value, size])
-                        }
-                        onRemove={(sizeToRemove) =>
-                          field.onChange([
-                            ...field.value.filter(
-                              (size) => size !== sizeToRemove,
-                            ),
-                          ])
-                        }
+                        value={toStringArray(field.value)}
+                        onChange={(item) => {
+                          const current = toStringArray(field.value);
+                          field.onChange([...current, item]);
+                        }}
+                        onRemove={(itemToRemove) => {
+                          const current = toStringArray(field.value);
+                          field.onChange(current.filter((item) => item !== itemToRemove));
+                        }}
                       />
                     </FormControl>
                     <FormMessage />
@@ -431,17 +442,15 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
                     <FormControl>
                       <MultiText
                         placeholder="Colors"
-                        value={field.value}
-                        onChange={(color) =>
-                          field.onChange([...field.value, color])
-                        }
-                        onRemove={(colorToRemove) =>
-                          field.onChange([
-                            ...field.value.filter(
-                              (color) => color !== colorToRemove,
-                            ),
-                          ])
-                        }
+                        value={toStringArray(field.value)}
+                        onChange={(item) => {
+                          const current = toStringArray(field.value);
+                          field.onChange([...current, item]);
+                        }}
+                        onRemove={(itemToRemove) => {
+                          const current = toStringArray(field.value);
+                          field.onChange(current.filter((item) => item !== itemToRemove));
+                        }}
                       />
                     </FormControl>
                     <FormMessage />
@@ -459,15 +468,15 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
                     <FormControl>
                       <MultiText
                         placeholder="Tags"
-                        value={field.value}
-                        onChange={(tag) =>
-                          field.onChange([...field.value, tag])
-                        }
-                        onRemove={(tagToRemove) =>
-                          field.onChange([
-                            ...field.value.filter((tag) => tag !== tagToRemove),
-                          ])
-                        }
+                        value={toStringArray(field.value)}
+                        onChange={(item) => {
+                          const current = toStringArray(field.value);
+                          field.onChange([...current, item]);
+                        }}
+                        onRemove={(itemToRemove) => {
+                          const current = toStringArray(field.value);
+                          field.onChange(current.filter((item) => item !== itemToRemove));
+                        }}
                       />
                     </FormControl>
                     <FormMessage />
@@ -506,9 +515,11 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
           <Label>Variants (color/size stock)</Label>
           <div className="bg-mbg-black/7 mt-2 w-full px-2 py-2">
             {(() => {
-              const variants = form.watch("variants") || [];
+              const variantsRaw = form.watch("variants");
+              const variants = Array.isArray(variantsRaw) ? variantsRaw : [];
               const set = (updater: (arr: any[]) => any[]) => {
-                const current = form.getValues("variants") || [];
+                const currentRaw = form.getValues("variants");
+                const current = Array.isArray(currentRaw) ? currentRaw : [];
                 form.setValue("variants", updater(current), {
                   shouldDirty: true,
                   shouldTouch: true,
@@ -594,7 +605,8 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
                       type="button"
                       className="text-mbg-black text-[10px] underline"
                       onClick={() => {
-                        const list = form.getValues("variants") || [];
+                        const listRaw = form.getValues("variants");
+                        const list = Array.isArray(listRaw) ? listRaw : [];
                         const total = list.reduce(
                           (s: number, it: any) => s + Number(it?.stock || 0),
                           0,
@@ -623,10 +635,13 @@ const ProductForm: React.FC<ProductFormProps> = ({ initialData }) => {
                     <Input
                       type="number"
                       placeholder="Count in stock"
-                      value={field.value}
+                      value={typeof field.value === "number" ? field.value : Number(field.value ?? 0)}
+                      name={field.name}
                       onChange={(e) =>
                         field.onChange(Math.max(0, Number(e.target.value)))
                       }
+                      onBlur={field.onBlur}
+                      ref={field.ref}
                       onKeyDown={handleKeyPress}
                     />
                   </FormControl>
