@@ -26,7 +26,7 @@ export default async function RootLayout({
   }
 
   // Enforce authorization; redirect unauthorized users to the public store
-  const storeUrl = process.env.ECOMMERCE_STORE_URL || "http://localhost:3001";
+  const storeUrl = process.env.ECOMMERCE_STORE_URL || "https://milos-bg.com";
   if (!isAuthorized(user)) {
     redirect(storeUrl);
   }

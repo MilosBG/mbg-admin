@@ -16,7 +16,7 @@ export const metadata = {
 
 export default async function MilosBgManagementPage() {
   const state = await getMilosBGState();
-  const storeUrl = process.env.ECOMMERCE_STORE_URL || "http://localhost:3001";
+  const storeUrl = process.env.ECOMMERCE_STORE_URL || "https://milos-bg.com";
 
   return (
     <Container>
