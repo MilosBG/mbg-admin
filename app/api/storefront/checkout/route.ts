@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { CheckoutError, type CheckoutRequestBody, startStorefrontCheckout } from "@/lib/paypalCheckout";
-import { getStorefrontServiceToken } from "@/lib/serviceTokens";
+import { getStorefrontServiceToken, isValidStorefrontToken } from "@/lib/serviceTokens";
+import {
+  CheckoutError,
+  type CheckoutRequestBody,
+  startStorefrontCheckout,
+} from "@/lib/paypalCheckout";
 
 function getCors(req: NextRequest) {
   const origin = req.headers.get("origin") || "";
@@ -15,12 +19,11 @@ function getCors(req: NextRequest) {
   };
 }
 
-function extractServiceToken(req: NextRequest): string | null {
-  const auth = req.headers.get("authorization") || "";
-  const match = /^Bearer\s+(.+)$/i.exec(auth);
-  if (match) return match[1].trim();
-  const alt = req.headers.get("x-storefront-service-token");
-  return alt ? alt.trim() : null;
+function extractBearerToken(req: NextRequest): string | null {
+  const header = req.headers.get("authorization") || "";
+  const match = /^Bearer\s+(.+)$/i.exec(header);
+  if (!match) return null;
+  return match[1].trim();
 }
 
 export async function OPTIONS(req: NextRequest) {
@@ -30,22 +33,32 @@ export async function OPTIONS(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const headers = getCors(req);
   const expectedToken = getStorefrontServiceToken();
-  const providedToken = extractServiceToken(req);
+  if (!expectedToken) {
+    return NextResponse.json({ error: "SERVICE_TOKEN_NOT_CONFIGURED" }, { status: 500, headers });
+  }
 
-  if (providedToken) {
-    if (!expectedToken || providedToken !== expectedToken) {
-      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401, headers });
-    }
+  let providedToken = extractBearerToken(req);
+  if (!providedToken) {
+    const alt = req.headers.get("x-storefront-service-token");
+    if (alt) providedToken = alt.trim();
+  }
+
+  if (!isValidStorefrontToken(providedToken)) {
+    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401, headers });
+  }
+
+  let body: CheckoutRequestBody;
+  try {
+    body = (await req.json()) as CheckoutRequestBody;
+  } catch {
+    return NextResponse.json(
+      { error: "INVALID_JSON" },
+      { status: 400, headers },
+    );
   }
 
   try {
-    const body = (await req.json()) as CheckoutRequestBody | null;
-    if (!body) {
-      return NextResponse.json({ error: "MISSING_BODY" }, { status: 400, headers });
-    }
-
     const result = await startStorefrontCheckout(body);
-
     return NextResponse.json(
       { approveUrl: result.approveUrl, orderId: result.orderId },
       { status: 200, headers },
@@ -61,7 +74,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log("[paypal_checkout_POST]", err);
-    return NextResponse.json({ error: "INTERNAL_ERROR" }, { status: 500, headers });
+    console.log("[storefront_checkout_POST]", err);
+    return NextResponse.json(
+      { error: "INTERNAL_ERROR" },
+      { status: 500, headers },
+    );
   }
 }
