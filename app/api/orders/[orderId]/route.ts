@@ -5,6 +5,25 @@ import { connectToDB } from "@/lib/mongoDB";
 import { getStorefrontServiceToken, isValidStorefrontToken } from "@/lib/serviceTokens";
 import { NextRequest, NextResponse } from "next/server";
 
+type LeanOrder = {
+  _id: unknown;
+  customerClerkId?: string | null;
+  shippingAddress?: {
+    street?: string | null;
+    city?: string | null;
+    state?: string | null;
+    postalCode?: string | null;
+    country?: string | null;
+  } | null;
+  shippingRate?: string | null;
+  shippingMethod?: string | null;
+  trackingNumber?: string | null;
+  weightGrams?: number | null;
+  totalAmount?: number | null;
+  createdAt?: Date | string | null;
+  dateMailed?: Date | string | null;
+  products?: unknown;
+};
 function getCors(req: NextRequest) {
   const origin = req.headers.get("origin") || "";
   const allowed = [String(process.env.ECOMMERCE_STORE_URL || "")].filter(Boolean);
@@ -56,7 +75,7 @@ export const GET = async (
 
     const orderDetails = await Order.findById(orderId)
       .populate({ path: "products.product", model: Product })
-      .lean();
+      .lean<LeanOrder | null>();
 
     if (!orderDetails) {
       return NextResponse.json({ error: "NOT_FOUND" }, { status: 404, headers });
