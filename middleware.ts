@@ -6,7 +6,8 @@ const tokenBypassRoute = createRouteMatcher([
   "/api/checkout",
   "/api/storefront/checkout",
   "/api/storefront/paypal/capture",
-  "/api/orders/customers/(.*)",
+  "/api/orders/customers/:customerId",
+  "/api/orders/:orderId",
 ]);
 
 const isPublicRoute = createRouteMatcher([
@@ -61,3 +62,4 @@ export const config = {
     "/(api|trpc)(.*)",
   ],
 };
+

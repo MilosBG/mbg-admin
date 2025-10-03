@@ -20,12 +20,18 @@ type OrderDetailsRes = {
 const OrderDetails = async ({ params }: { params: Promise<{ orderId: string }> }) => {
   const { orderId } = await params;
   const base = process.env.ECOMMERCE_ADMIN_URL || "";
-  const url = base ? `${base}/api/orders/${orderId}` : `/api/orders/${orderId}`;
+  const target = base ? `${base}/api/orders/${orderId}` : `/api/orders/${orderId}`;
+  const headers: Record<string, string> = {};
+  const serviceToken = process.env.ADMIN_SERVICE_TOKEN || process.env.STOREFRONT_SERVICE_TOKEN;
+  if (serviceToken) {
+    headers.Authorization = `Bearer ${serviceToken}`;
+  }
   const res = await fetch(
-    url,
+    target,
     {
       // IMPORTANT: avoid stale cached response with customer=null
       cache: "no-store", // or next: { revalidate: 0 }
+      headers,
     }
   );
   if (!res.ok) {

@@ -17,8 +17,13 @@ type OrderDetailsRes = {
 export default async function PrintOrderPage({ params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = await params;
   const base = process.env.ECOMMERCE_ADMIN_URL || "";
-  const url = base ? `${base}/api/orders/${orderId}` : `/api/orders/${orderId}`;
-  const res = await fetch(url, { cache: "no-store" });
+  const target = base ? `${base}/api/orders/${orderId}` : `/api/orders/${orderId}`;
+  const headers: Record<string, string> = {};
+  const serviceToken = process.env.ADMIN_SERVICE_TOKEN || process.env.STOREFRONT_SERVICE_TOKEN;
+  if (serviceToken) {
+    headers.Authorization = `Bearer ${serviceToken}`;
+  }
+  const res = await fetch(target, { cache: "no-store", headers });
   if (!res.ok) throw new Error(`Failed to load order (${res.status})`);
   const { orderDetails, customer } = (await res.json()) as OrderDetailsRes;
 
