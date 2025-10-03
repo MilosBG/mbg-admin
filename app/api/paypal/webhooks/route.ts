@@ -93,18 +93,39 @@ export async function POST(req: NextRequest) {
       const totalAmount = Number(purchaseUnit?.amount?.value || 0);
 
       await connectToDB();
-      const newOrder = new Order({
-        customerClerkId: customerInfo.clerkId,
-        products: orderItems,
-        shippingAddress,
-        shippingRate,
-        totalAmount,
-        fulfillmentStatus: "PENDING",
+      const paypalOrderId = String(order.id || orderId);
+      const existingOrder = await Order.findOne({ paypalOrderId }).lean();
+      const savedOrder = await Order.findOneAndUpdate(
+        { paypalOrderId },
+        {
+          $set: {
+            paypalOrderId,
+            status: "COMPLETED",
+            customerClerkId: customerInfo.clerkId,
+            products: orderItems,
+            shippingAddress,
+            shippingRate,
+            totalAmount,
+          },
+          $setOnInsert: { createdAt: new Date(), fulfillmentStatus: "PENDING" },
+        },
+        { upsert: true, new: true }
+      ).catch(async (e: any) => {
+        if (e?.code === 11000) {
+          return Order.findOne({ paypalOrderId });
+        }
+        throw e;
       });
-      await newOrder.save();
 
-      // Decrement product stock based on purchased quantities (variant-aware)
-      try {
+      if (!savedOrder) {
+        throw new Error("Failed to persist PayPal order");
+      }
+
+      const isNewOrder = !existingOrder;
+
+      if (isNewOrder) {
+        // Decrement product stock based on purchased quantities (variant-aware)
+        try {
         for (const item of orderItems) {
           const productId = item.product;
           const qty = Number(item.quantity || 0);
@@ -149,8 +170,9 @@ export async function POST(req: NextRequest) {
             }
           } catch {}
         }
-      } catch (stockErr) {
-        console.warn("[paypal_webhook] Failed to decrement stock", stockErr);
+        } catch (stockErr) {
+          console.warn("[paypal_webhook] Failed to decrement stock", stockErr);
+        }
       }
 
       // Upsert customer (handle missing clerkId by falling back to email)
@@ -191,7 +213,7 @@ export async function POST(req: NextRequest) {
             ...(rawClerkId && { clerkId: rawClerkId }),
             orders: [],
           },
-          $addToSet: { orders: newOrder._id },
+          $addToSet: { orders: savedOrder._id },
           $set: {
             ...(nameFull && { name: nameFull }),
             ...(emailLc && { email: emailLc }),
@@ -214,3 +236,4 @@ export async function POST(req: NextRequest) {
     return new NextResponse("Failed To Handle Webhook", { status: 500 });
   }
 }
+

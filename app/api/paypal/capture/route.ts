@@ -122,6 +122,39 @@ export async function POST(req: NextRequest) {
     const totalAmount = Number(purchaseUnit?.amount?.value ?? 0);
     const paypalOrderId = String(ppOrder.id || orderId);
 
+    const captureStatuses: string[] = [];
+    const collectCaptureStatuses = (units: any) => {
+      if (!Array.isArray(units)) return;
+      for (const unit of units) {
+        if (!unit) continue;
+        const paymentsAny = (unit as any)?.payments || (unit as any)?.payments;
+        const candidateLists = [
+          paymentsAny?.captures,
+          (paymentsAny as any)?.captures,
+        ];
+        for (const candidate of candidateLists) {
+          if (!Array.isArray(candidate)) continue;
+          for (const capture of candidate) {
+            const statusValue = capture?.status;
+            if (statusValue) captureStatuses.push(String(statusValue));
+          }
+        }
+      }
+    };
+    collectCaptureStatuses((capturePayload as any)?.purchaseUnits);
+    collectCaptureStatuses((capturePayload as any)?.purchase_units);
+    collectCaptureStatuses(ppOrder.purchaseUnits);
+
+    const captureStatusHint = String((capturePayload as any)?.status || "");
+    if (captureStatusHint) captureStatuses.push(captureStatusHint);
+
+    const hasCompletedCapture =
+      captureOK ||
+      status === "COMPLETED" ||
+      captureStatuses.some((value) => String(value || "").toUpperCase() === "COMPLETED");
+
+    const orderStatus = hasCompletedCapture ? "COMPLETED" : status || "CREATED";
+
     // 4) Persist order (idempotent)
     await connectToDB();
 
@@ -130,7 +163,7 @@ export async function POST(req: NextRequest) {
       {
         $set: {
           paypalOrderId,
-          status: status || "COMPLETED",
+          status: orderStatus,
           customerClerkId: clerkId,
           products: orderItems,
           shippingAddress,
