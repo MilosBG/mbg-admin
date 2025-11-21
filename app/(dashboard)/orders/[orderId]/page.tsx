@@ -101,6 +101,8 @@ const OrderDetails = async ({ params }: { params: Promise<{ orderId: string }> }
     };
     return {
       product: baseProduct,
+      productId: rawId,
+      titleSnapshot: title,
       color: String(item.color ?? "N/A"),
       size: String(item.size ?? "N/A"),
       quantity: Number(item.quantity ?? 0),

@@ -54,6 +54,8 @@ type OrderColumnType = {
 }
 type OrderItemType = {
   product: ProductType;
+  productId?: string;
+  titleSnapshot?: string;
   color: string;
   size: string;
   quantity: number;
