@@ -18,9 +18,9 @@ export const PATCH = async (
       if (["FREE", "EXPRESS"].includes(v)) update.shippingMethod = v;
     }
     if (typeof body?.trackingNumber === "string") update.trackingNumber = body.trackingNumber.trim();
-    if (body?.weightGrams !== undefined) {
-      const n = Number(body.weightGrams);
-      if (!Number.isNaN(n)) update.weightGrams = n;
+    if (typeof body?.transporter === "string") {
+      const carrier = body.transporter.trim();
+      update.transporter = carrier || null;
     }
     if (body?.dateMailed) {
       const d = new Date(body.dateMailed);

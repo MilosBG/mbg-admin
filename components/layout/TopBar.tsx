@@ -9,11 +9,13 @@ import { MdGridView } from "react-icons/md";
 import { MilosBG } from "@/images";
 import { navLinks } from "@/lib/constants";
 
-const TopBar = () => {
+const baseClass = "sticky top-0 z-20 w-full mbg-p-between px-8 py-4 bg-black shadow-xl lg:hidden";
+
+const TopBar: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ className = "", ...rest }) => {
   const [dropdownMenu, setDorpdownMenu] = useState(false);
   const pathname = usePathname();
   return (
-    <div className="sticky top-0 z-20 w-full mbg-p-between px-8 py-4 bg-black shadow-xl lg:hidden">
+    <div className={`${baseClass} ${className}`.trim()} {...rest}>
       <Image src={MilosBG} alt="Milos BG" width={150} />
       <div className="flex  gap-8 max-md:hidden">
         {navLinks.map((link) => (

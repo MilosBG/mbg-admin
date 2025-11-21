@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { CheckoutError, type CheckoutRequestBody, startStorefrontCheckout } from "@/lib/paypalCheckout";
+import { CheckoutError, type CheckoutRequestBody, startStorefrontCheckout } from "@/lib/storefrontCheckout";
 import { getStorefrontServiceToken } from "@/lib/serviceTokens";
 
 function getCors(req: NextRequest) {
@@ -45,11 +45,19 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await startStorefrontCheckout(body);
+    const payload = {
+      approveUrl: result.approveUrl,
+      orderId: result.orderId,
+      reference: result.reference ?? null,
+      currency: result.currency,
+      total: result.total,
+      itemTotal: result.itemTotal,
+      shippingAmount: result.shippingAmount,
+      shippingRate: result.shippingRate,
+      message: result.message ?? null,
+    };
 
-    return NextResponse.json(
-      { approveUrl: result.approveUrl, orderId: result.orderId },
-      { status: 200, headers },
-    );
+    return NextResponse.json(payload, { status: 200, headers });
   } catch (err) {
     if (err instanceof CheckoutError) {
       return NextResponse.json(
@@ -61,7 +69,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log("[paypal_checkout_POST]", err);
+    console.log("[checkout_POST]", err);
     return NextResponse.json({ error: "INTERNAL_ERROR" }, { status: 500, headers });
   }
 }
+

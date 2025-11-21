@@ -7,7 +7,9 @@ export const columns: ColumnDef<OrderItemType>[] = [
     accessorKey: "product",
     header: "Product",
     cell: ({ row }) => (
-      <Link href={`/products/${row.original.product._id}`}>{row.original.product.title}</Link>
+      <Link href={`/products/${row.original?.product?._id ?? row.original.productId ?? ""}`}>
+        {row.original?.product?.title ?? row.original.titleSnapshot ?? "Product"}
+      </Link>
     ),
   },
   {

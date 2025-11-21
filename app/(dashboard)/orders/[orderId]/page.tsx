@@ -6,6 +6,7 @@ import Separator from "@/components/mbg-components/Separator";
 import { columns } from "@/components/orderItems/OrderItemsColumns";
 import { ShipmentEditor, PaymentStatusEditor } from "@/components/orders/OrderDetailEditors";
 import { Badge } from "@/components/ui/badge";
+import { collapseOrderProducts } from "@/lib/orderProductUtils";
 import { format } from "date-fns";
 import React from "react";
 
@@ -58,14 +59,62 @@ const OrderDetails = async ({ params }: { params: Promise<{ orderId: string }> }
 
   const customerName = customer?.name ?? "N/A";
   const customerEmail = customer?.email ?? "N/A";
+  const collapsedProducts = collapseOrderProducts(
+    Array.isArray(orderDetails?.products)
+      ? (orderDetails.products as Array<Record<string, unknown>>)
+      : [],
+  );
+  const subtotalFromProducts = collapsedProducts.reduce(
+    (sum, item) => sum + Number(item.unitPrice ?? 0) * Number(item.quantity ?? 0),
+    0,
+  );
+  const shippingAmount = Number(orderDetails?.shippingAmount ?? 0);
+  const displayTotal = Number.isFinite(subtotalFromProducts)
+    ? Number((subtotalFromProducts + shippingAmount).toFixed(2))
+    : Number(orderDetails?.totalAmount ?? 0);
+  const tableRows: OrderItemType[] = collapsedProducts.map((item) => {
+    const rawId =
+      typeof item.product === "string"
+        ? item.product
+        : typeof item.productLegacyId === "string"
+          ? item.productLegacyId
+          : "";
+    const title =
+      typeof item.titleSnapshot === "string" && item.titleSnapshot.trim()
+        ? item.titleSnapshot
+        : "Product";
+    const baseProduct: ProductType = {
+      _id: rawId,
+      title,
+      description: "",
+      media: [],
+      category: "",
+      chapters: [],
+      tags: [],
+      sizes: [],
+      colors: [],
+      countInStock: 0,
+      price: Number(item.unitPrice ?? 0),
+      expense: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    return {
+      product: baseProduct,
+      color: String(item.color ?? "N/A"),
+      size: String(item.size ?? "N/A"),
+      quantity: Number(item.quantity ?? 0),
+    };
+  });
+
 
   // Compact status timeline + friendly messages
   const STATUS_MESSAGES: Record<string, string> = {
-    PENDING: "Order received. We will start processing soon.",
-    PROCESSING: "We're preparing your order.",
-    SHIPPED: "Your order is on the way.",
-    DELIVERED: "Your order has been delivered.",
-    COMPLETED: "Order completed. Thank you!",
+    PENDING: "Order placed.",
+    PROCESSING: "The order is on preparation.",
+    SHIPPED: "The order is on the way.",
+    DELIVERED: "The order has been delivered.",
+    COMPLETED: "Order completed",
     CANCELLED: "Order was cancelled.",
   };
 
@@ -79,12 +128,12 @@ const OrderDetails = async ({ params }: { params: Promise<{ orderId: string }> }
 
   const status: string = String(orderDetails?.fulfillmentStatus || "PENDING").toUpperCase();
   const STATUS_COLORS: Record<string, string> = {
-    PENDING: "rounded-xs tracking-widest bg-mbg-gold/60 text-mbg-black",
-    PROCESSING: "rounded-xs tracking-widest bg-mbg-green/40 text-mbg-black",
-    SHIPPED: "rounded-xs tracking-widest bg-mbg-green/50 text-mbg-black",
-    DELIVERED: "rounded-xs tracking-widest bg-mbg-green/60 text-mbg-black",
-    COMPLETED: "rounded-xs tracking-widest bg-mbg-green text-mbg-black",
-    CANCELLED: "rounded-xs tracking-widest bg-mbg-red/60 text-mbg-white",
+    PENDING: "rounded-xs tracking-widest shadow-sm bg-gray-200 text-gray-700",
+    PROCESSING: "rounded-xs tracking-widest shadow-sm bg-blue-200 text-blue-700",
+    SHIPPED: "rounded-xs tracking-widest shadow-sm bg-purple-200 text-purple-700",
+    DELIVERED: "rounded-xs tracking-widest shadow-sm bg-teal-200 text-teal-800",
+    COMPLETED: "rounded-xs tracking-widest shadow-sm bg-green-200 text-green-700",
+    CANCELLED: "rounded-xs tracking-widest shadow-sm bg-red-200 text-red-700",
   };
 
   return (
@@ -133,7 +182,7 @@ const OrderDetails = async ({ params }: { params: Promise<{ orderId: string }> }
         <p className="body-medium text-mbg-black mt-3 uppercase">
           Total Paid{" "}
           <span className="body-medium text-mbg-green uppercase">
-            € {orderDetails?.totalAmount ?? 0}
+            € {displayTotal.toFixed(2)}
           </span>
         </p>
 
@@ -183,7 +232,7 @@ const OrderDetails = async ({ params }: { params: Promise<{ orderId: string }> }
 
         <DataTable
           columns={columns}
-          data={Array.isArray(orderDetails?.products) ? orderDetails.products : []}
+          data={tableRows}
           searchKey="product"
         
         />
@@ -193,3 +242,12 @@ const OrderDetails = async ({ params }: { params: Promise<{ orderId: string }> }
 };
 
 export default OrderDetails;
+
+
+
+
+
+
+
+
+

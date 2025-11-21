@@ -5,7 +5,6 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 const tokenBypassRoute = createRouteMatcher([
   "/api/checkout",
   "/api/storefront/checkout",
-  "/api/storefront/paypal/capture",
   "/api/orders/customers/:customerId",
   "/api/orders/:orderId",
 ]);

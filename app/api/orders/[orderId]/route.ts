@@ -4,25 +4,36 @@ import Product from "@/lib/models/Product";
 import { connectToDB } from "@/lib/mongoDB";
 import { getStorefrontServiceToken, isValidStorefrontToken } from "@/lib/serviceTokens";
 import { NextRequest, NextResponse } from "next/server";
+import { collapseOrderProducts } from "@/lib/orderProductUtils";
 
 type LeanOrder = {
   _id: unknown;
   customerClerkId?: string | null;
   shippingAddress?: {
+    firstName?: string | null;
+    lastName?: string | null;
     street?: string | null;
     city?: string | null;
     state?: string | null;
     postalCode?: string | null;
     country?: string | null;
+    phone?: string | null;
   } | null;
   shippingRate?: string | null;
   shippingMethod?: string | null;
   trackingNumber?: string | null;
-  weightGrams?: number | null;
+  transporter?: string | null;
   totalAmount?: number | null;
   createdAt?: Date | string | null;
   dateMailed?: Date | string | null;
   products?: unknown;
+  contact?: {
+    email?: string | null;
+    phone?: string | null;
+    name?: string | null;
+  } | null;
+  notes?: string | null;
+  metadata?: unknown;
 };
 function getCors(req: NextRequest) {
   const origin = req.headers.get("origin") || "";
@@ -81,11 +92,30 @@ export const GET = async (
       return NextResponse.json({ error: "NOT_FOUND" }, { status: 404, headers });
     }
 
+    const collapsedProducts = collapseOrderProducts(
+      Array.isArray(orderDetails.products) ? (orderDetails.products as Array<Record<string, unknown>>) : [],
+    );
+    const orderWithMergedProducts = {
+      ...orderDetails,
+      products: collapsedProducts,
+    } as LeanOrder & { products: typeof collapsedProducts };
+
+    if (Array.isArray(collapsedProducts) && collapsedProducts.length) {
+      // sync top-level subtotal/total if present
+      const subtotal = collapsedProducts.reduce(
+        (sum, item) => sum + Number(item.unitPrice ?? 0) * Number(item.quantity ?? 0),
+        0,
+      );
+      if (Number.isFinite(subtotal)) {
+        (orderWithMergedProducts as Record<string, unknown>).subtotalAmount = Number(subtotal.toFixed(2));
+      }
+    }
+
     const customer = orderDetails.customerClerkId
       ? await Customer.findOne({ clerkId: orderDetails.customerClerkId }).lean()
       : null;
 
-    return NextResponse.json({ orderDetails, customer }, { status: 200, headers });
+    return NextResponse.json({ orderDetails: orderWithMergedProducts, customer }, { status: 200, headers });
   } catch (err) {
     console.log("[orderId_GET]", err);
     return NextResponse.json({ error: "INTERNAL_ERROR" }, { status: 500, headers });

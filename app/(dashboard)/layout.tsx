@@ -36,10 +36,10 @@ export default async function RootLayout({
       <html lang="en">
         <body className="font-kanit text-sm antialiased">
           <ToasterProvider />
-          <div className="flex max-lg:flex-col">
-            <LeftSideBar />
-            <TopBar />
-            <div className="flex-1">{children}</div>
+          <div className="flex max-lg:flex-col" data-dashboard-shell>
+            <LeftSideBar data-dashboard-sidebar />
+            <TopBar data-dashboard-topbar />
+            <div className="flex-1" data-dashboard-content>{children}</div>
           </div>
         </body>
       </html>

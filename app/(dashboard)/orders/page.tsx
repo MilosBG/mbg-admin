@@ -11,7 +11,6 @@ import { H2 } from "@/components/mbg-components/H2";
 import Loader from "@/components/mbg-components/Loader";
 import Separator from "@/components/mbg-components/Separator";
 import { orderColumns } from "@/components/orders/OrderColumns";
-import AutoPrinter from "@/components/orders/AutoPrinter";
 import { fetchWithTimeout } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -73,7 +72,6 @@ const Orders = () => {
             <option value="CANCELLED">CANCELLED</option>
           </select>
         </div>
-          <AutoPrinter />
       </div>
       <DataTable
         key={`${statusFilter}|${filtered.map((o:any)=>o._id+':'+(o.fulfillmentStatus||'')).join('|')}`}
@@ -84,6 +82,11 @@ const Orders = () => {
           onShipmentChange: (id, patch) => {
             setOrders((prev) => prev.map((o: any) => (
               o._id === id ? { ...o, ...patch } : o
+            )));
+          },
+          onPaymentStatusChange: (id, next) => {
+            setOrders((prev) => prev.map((o: any) => (
+              o._id === id ? { ...o, paymentStatus: next } : o
             )));
           },
         })}

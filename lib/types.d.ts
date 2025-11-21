@@ -29,12 +29,27 @@ type OrderColumnType = {
   customer: string;
   products: number;
   totalAmount: number;
+  paymentStatus?: "PENDING" | "PAID" | "NOT PAID";
   fulfillmentStatus: "PENDING" | "PROCESSING" | "SHIPPED" | "DELIVERED" | "COMPLETED" | "CANCELLED";
   shippingMethod?: "FREE" | "EXPRESS" | null;
   trackingNumber?: string | null;
-  weightGrams?: number | null;
+  transporter?: string | null;
   dateMailed?: string | null;
   shippingRate?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  contactName?: string | null;
+  notes?: string | null;
+  shippingAddress?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    street?: string | null;
+    city?: string | null;
+    state?: string | null;
+    postalCode?: string | null;
+    country?: string | null;
+    phone?: string | null;
+  } | null;
   createdAt: string;
 }
 type OrderItemType = {

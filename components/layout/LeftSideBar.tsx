@@ -8,10 +8,12 @@ import { MilosBG } from "@/images";
 import { navLinks } from "@/lib/constants";
 import { usePathname } from "next/navigation";
 
-const LeftSideBar = () => {
+const baseClass = "bg-mbg-black sticky top-0 left-0 flex h-screen w-[15%] flex-col gap-10 p-6 shadow-xl max-lg:hidden";
+
+const LeftSideBar: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ className = "", ...rest }) => {
   const pathname = usePathname();
   return (
-    <div className="bg-mbg-black sticky top-0 left-0 flex h-screen w-[15%] flex-col gap-10 p-6 shadow-xl max-lg:hidden">
+    <div className={`${baseClass} ${className}`.trim()} {...rest}>
       <Image src={MilosBG} alt="Milos BG" width={150} />
       <div className="flex flex-col gap-4">
         {navLinks.map((link) => (
@@ -28,9 +30,9 @@ const LeftSideBar = () => {
         ))}
       </div>
 
-      <Link href={"/sign-in"}>
+      <Link href="/sign-in">
         <div className="mbg-p-center bg-mbg-green/27  p-1">
-          <div className="bg-mbg-green rounded-full mbg-p-center p-1.5 m-3" ><UserButton /></div>
+          <div className="bg-mbg-green rounded-full mbg-p-center p-1.5 m-3"><UserButton /></div>
         </div>
       </Link>
     </div>

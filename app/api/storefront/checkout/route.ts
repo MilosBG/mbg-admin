@@ -4,7 +4,7 @@ import {
   CheckoutError,
   type CheckoutRequestBody,
   startStorefrontCheckout,
-} from "@/lib/paypalCheckout";
+} from "@/lib/storefrontCheckout";
 
 function getCors(req: NextRequest) {
   const origin = req.headers.get("origin") || "";
@@ -58,11 +58,23 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    console.log("[storefront checkout] payload received", {
+      clerkId: body?.customer?.clerkId ?? null,
+      lines: Array.isArray(body?.cartItems) ? body.cartItems.length : 0,
+    });
     const result = await startStorefrontCheckout(body);
-    return NextResponse.json(
-      { approveUrl: result.approveUrl, orderId: result.orderId },
-      { status: 200, headers },
-    );
+    const payload = {
+      approveUrl: result.approveUrl,
+      orderId: result.orderId,
+      reference: result.reference ?? null,
+      currency: result.currency,
+      total: result.total,
+      itemTotal: result.itemTotal,
+      shippingAmount: result.shippingAmount,
+      shippingRate: result.shippingRate,
+      message: result.message ?? null,
+    };
+    return NextResponse.json(payload, { status: 200, headers });
   } catch (err) {
     if (err instanceof CheckoutError) {
       return NextResponse.json(
@@ -81,3 +93,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
