@@ -6,16 +6,15 @@ import Link from "next/link";
 import { Badge } from "../ui/badge";
 import Input from "@/components/mbg-components/Input";
 import React, { useState } from "react";
-import { Printer } from "lucide-react";
 import toast from "react-hot-toast";
 
 const STATUS_COLORS: Record<string, string> = {
-    PENDING: "rounded-xs tracking-widest shadow-sm bg-gray-200 text-gray-700",
-    PROCESSING: "rounded-xs tracking-widest shadow-sm bg-blue-200 text-blue-700",
-    SHIPPED: "rounded-xs tracking-widest shadow-sm bg-purple-200 text-purple-700",
-    DELIVERED: "rounded-xs tracking-widest shadow-sm bg-teal-200 text-teal-800",
-    COMPLETED: "rounded-xs tracking-widest shadow-sm bg-green-200 text-green-700",
-    CANCELLED: "rounded-xs tracking-widest shadow-sm bg-red-200 text-red-700",
+  PENDING: "rounded-xs tracking-widest bg-mbg-gold/60 text-mbg-black",
+  PROCESSING: "rounded-xs tracking-widest bg-mbg-green/40 text-mbg-black",
+  SHIPPED: "rounded-xs tracking-widest bg-mbg-green/50 text-mbg-black",
+  DELIVERED: "rounded-xs tracking-widest bg-mbg-green/60 text-mbg-black",
+  COMPLETED: "rounded-xs tracking-widest bg-mbg-green text-mbg-black",
+  CANCELLED: "rounded-xs tracking-widest bg-mbg-red/60 text-mbg-white",
 };
 
 const ALL_STATUSES = [
@@ -35,27 +34,29 @@ const ALLOWED: Record<string, string[]> = {
   COMPLETED: [],
   CANCELLED: [],
 };
+const PAYMENT_STATUSES = ["PENDING", "PAID", "NOT PAID"] as const;
 
-function openPrint(orderId: string) {
-  try {
-    const iframe = document.createElement("iframe");
-    iframe.style.position = "fixed";
-    iframe.style.right = "-10000px";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
-    iframe.style.border = "0";
-    iframe.src = `/orders/${orderId}/print`;
-    iframe.onload = () => {
-      try { iframe.contentWindow?.print(); } catch {}
-      setTimeout(() => { try { iframe.remove(); } catch {} }, 1200);
-    };
-    document.body.appendChild(iframe);
-  } catch {}
+const PAYMENT_STATUS_BADGE: Record<(typeof PAYMENT_STATUSES)[number], string> = {
+  PENDING: "rounded-xs tracking-widest bg-mbg-gold/50 text-mbg-black",
+  PAID: "rounded-xs tracking-widest bg-mbg-green/50 text-mbg-black",
+  "NOT PAID": "rounded-xs tracking-widest bg-mbg-red/50 text-mbg-white",
+};
+
+function normalizePaymentStatus(raw: unknown): (typeof PAYMENT_STATUSES)[number] {
+  const value = typeof raw === "string" ? raw.trim().toUpperCase() : "";
+  if ((PAYMENT_STATUSES as readonly string[]).includes(value)) {
+    return value as (typeof PAYMENT_STATUSES)[number];
+  }
+  if (value === "COMPLETED") return "PAID";
+  if (value === "VOIDED") return "NOT PAID";
+  if (value === "CREATED" || value === "PROCESSING" || value === "PENDIND") return "PENDING";
+  return "PENDING";
 }
 
 export function orderColumns(opts?: { 
   onStatusChange?: (id: string, next: string) => void,
-  onShipmentChange?: (id: string, patch: { trackingNumber?: string | null; weightGrams?: number | null; dateMailed?: string | null }) => void,
+  onShipmentChange?: (id: string, patch: { trackingNumber?: string | null; transporter?: string | null; dateMailed?: string | null }) => void,
+  onPaymentStatusChange?: (id: string, next: string) => void,
 }): ColumnDef<OrderColumnType>[] {
   return [
   {
@@ -83,7 +84,7 @@ export function orderColumns(opts?: {
     cell: ({ row }) => {
       const orig: any = row.original as any;
       const [tracking, setTracking] = useState(orig.trackingNumber || "");
-      const [weight, setWeight] = useState(typeof orig.weightGrams === "number" ? String(orig.weightGrams) : "");
+      const [transporter, setTransporter] = useState(orig.transporter || "");
       const [dateMailed, setDateMailed] = useState(
         orig.dateMailed ? String(orig.dateMailed).slice(0, 10) : ""
       );
@@ -94,9 +95,8 @@ export function orderColumns(opts?: {
         try {
           const payload: any = {
             trackingNumber: tracking || null,
+            transporter: transporter || null,
           };
-          const n = Number(weight);
-          if (!Number.isNaN(n)) payload.weightGrams = n;
           if (dateMailed) payload.dateMailed = dateMailed;
           const res = await fetch(`/api/orders/${orig._id}/shipping`, {
             method: "PATCH",
@@ -107,7 +107,7 @@ export function orderColumns(opts?: {
           // Update parent table data so inputs persist after rerenders
           opts?.onShipmentChange?.(orig._id, {
             trackingNumber: payload.trackingNumber ?? null,
-            weightGrams: payload.weightGrams ?? null,
+            transporter: payload.transporter ?? null,
             dateMailed: payload.dateMailed ?? null,
           });
           toast.success("Shipment details saved");
@@ -127,11 +127,10 @@ export function orderColumns(opts?: {
             onChange={(e) => setTracking(e.target.value)}
           />
           <Input
-            placeholder="Weight (g)"
-            className="w-24"
-            inputMode="numeric"
-            value={weight}
-            onChange={(e) => setWeight(e.target.value)}
+            placeholder="Transporter"
+            className="w-28"
+            value={transporter}
+            onChange={(e) => setTransporter(e.target.value)}
           />
           <input
             type="date"
@@ -161,7 +160,57 @@ export function orderColumns(opts?: {
   },
   {
     accessorKey: "totalAmount",
-    header: "Total Amount",
+    header: "Total Amount [€]",
+  },
+  {
+    id: "paymentStatus",
+    header: "Payment",
+    cell: ({ row }) => {
+      const paymentStatus = normalizePaymentStatus((row.original as any).paymentStatus);
+      const [value, setValue] = useState(paymentStatus);
+
+      async function update(next: string) {
+        const upper = normalizePaymentStatus(next);
+        if (!PAYMENT_STATUSES.includes(upper)) return;
+        const prev = value;
+        setValue(upper);
+        try {
+          const res = await fetch(`/api/orders/${row.original._id}/payment`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: upper }),
+          });
+          if (!res.ok) {
+            const txt = await res.text();
+            throw new Error(txt || `HTTP ${res.status}`);
+          }
+          opts?.onPaymentStatusChange?.(row.original._id, upper);
+          toast.success("Payment status updated");
+        } catch (err: any) {
+          setValue(prev);
+          toast.error(err?.message || "Failed to update payment status");
+        }
+      }
+
+      return (
+        <div className="flex flex-col gap-1 text-xs">
+          <Badge className={PAYMENT_STATUS_BADGE[value] || PAYMENT_STATUS_BADGE.PENDING}>
+            {value}
+          </Badge>
+          <select
+            className="border rounded-xs text-xs px-2 py-1 mt-1"
+            value={value}
+            onChange={(e) => update(e.target.value)}
+          >
+            {PAYMENT_STATUSES.map((statusOption) => (
+              <option key={statusOption} value={statusOption}>
+                {statusOption}
+              </option>
+            ))}
+          </select>
+        </div>
+      );
+    },
   },
   {
     accessorKey: "fulfillmentStatus",
@@ -197,7 +246,7 @@ export function orderColumns(opts?: {
         <div className="flex items-center gap-2">
           <Badge className={STATUS_COLORS[value] || "bg-gray-200 text-gray-700"}>{value}</Badge>
           <select
-            className="border rounded-xs text-xs px-2 py-1"
+            className="border border-mbg-green rounded-xs text-xs px-2 py-1 uppercase tracking-widest text-mbg-black"
             value={value}
             onChange={(e) => update(e.target.value)}
           >
@@ -210,20 +259,6 @@ export function orderColumns(opts?: {
         </div>
       );
     },
-  },
-  {
-    id: "print",
-    header: "Print",
-    cell: ({ row }) => (
-      <button
-        type="button"
-        title="Print order"
-        onClick={() => openPrint(row.original._id)}
-        className="text-xs px-2 py-1 rounded-xs border hover:bg-mbg-black/5"
-      >
-        <Printer className="inline h-3.5 w-3.5" />
-      </button>
-    ),
   },
   {
     accessorKey: "createdAt",
