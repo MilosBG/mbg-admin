@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Types } from "mongoose";
+import crypto from "crypto";
 import fs from "fs";
 
 import { connectToDB } from "@/lib/mongoDB";
@@ -405,6 +406,41 @@ const buildOrderProductsFromCart = (cartItems: NormalizedCartItem[]): OrderProdu
   return Array.from(grouped.values());
 };
 
+const buildIdempotencyKey = (params: {
+  clerkId: string;
+  contactEmail: string;
+  shippingAddress: Record<string, unknown>;
+  shippingRate: string;
+  shippingMethod: string;
+  totalAmount: number;
+  products: OrderProductDoc[];
+  metadata?: Record<string, unknown>;
+}): string => {
+  const productSignature = params.products
+    .map((p) => ({
+      product: p.product instanceof Types.ObjectId ? p.product.toString() : p.productLegacyId ?? "",
+      title: p.titleSnapshot ?? "",
+      size: p.size ?? "",
+      color: p.color ?? "",
+      quantity: Number(p.quantity ?? 0),
+      unitPrice: Number(p.unitPrice ?? 0),
+    }))
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+
+  const payload = {
+    clerkId: params.clerkId || "",
+    contactEmail: params.contactEmail || "",
+    shippingAddress: params.shippingAddress,
+    shippingRate: params.shippingRate,
+    shippingMethod: params.shippingMethod,
+    totalAmount: Number(params.totalAmount ?? 0),
+    products: productSignature,
+    metadataMarker: params.metadata?.generatedAt ?? null,
+  };
+
+  return crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+};
+
 export async function startStorefrontCheckout(body: CheckoutRequestBody) {
   const rawCartItems = getNormalizedCartItems(body);
   logCheckoutDebug("raw-cart", rawCartItems);
@@ -515,10 +551,40 @@ export async function startStorefrontCheckout(body: CheckoutRequestBody) {
     orderPayload.metadata = metadata;
   }
 
+  const idempotencyKey = buildIdempotencyKey({
+    clerkId,
+    contactEmail: contact.email,
+    shippingAddress: shippingDocument,
+    shippingRate: chosen.id,
+    shippingMethod: normalizedShip,
+    totalAmount,
+    products: orderProducts,
+    metadata,
+  });
+
+  const existingOrder = await Order.findOne({
+    "metadata.idempotencyKey": idempotencyKey,
+    createdAt: { $gte: new Date(Date.now() - 15 * 60 * 1000) },
+  });
+
+  if (existingOrder && !orderPayload.metadata) {
+    orderPayload.metadata = {};
+  }
+  if (orderPayload.metadata && typeof orderPayload.metadata === "object") {
+    (orderPayload.metadata as Record<string, unknown>).idempotencyKey = idempotencyKey;
+  } else {
+    orderPayload.metadata = { idempotencyKey };
+  }
+
   let order: any;
   try {
-    order = await Order.create(orderPayload);
-    console.log("[checkout] created order", { orderId: order?._id?.toString() ?? "unknown", clerkId, totalAmount });
+    if (existingOrder) {
+      order = existingOrder;
+      console.log("[checkout] reused idempotent order", { orderId: order?._id?.toString() ?? "unknown", clerkId, totalAmount });
+    } else {
+      order = await Order.create(orderPayload);
+      console.log("[checkout] created order", { orderId: order?._id?.toString() ?? "unknown", clerkId, totalAmount });
+    }
   } catch (err) {
     throw new CheckoutError("Failed to create order.", 500, {
       code: "ORDER_PERSISTENCE_FAILED",
@@ -526,10 +592,12 @@ export async function startStorefrontCheckout(body: CheckoutRequestBody) {
     });
   }
 
-  try {
-    await reserveStockForOrderItems(orderProducts);
-  } catch (inventoryError) {
-    console.warn("[checkout] failed to reserve stock for order", order?._id?.toString(), inventoryError);
+  if (!existingOrder) {
+    try {
+      await reserveStockForOrderItems(orderProducts);
+    } catch (inventoryError) {
+      console.warn("[checkout] failed to reserve stock for order", order?._id?.toString(), inventoryError);
+    }
   }
 
   const preferredName = normalizeString(body.customer?.name) || shippingFullName;
