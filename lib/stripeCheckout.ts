@@ -69,7 +69,9 @@ const asQuantity = (value: unknown): number => {
 const MAX_ITEM_FIELD_LENGTH = 127;
 
 const truncateField = (value: string) =>
-  value.length > MAX_ITEM_FIELD_LENGTH ? value.slice(0, MAX_ITEM_FIELD_LENGTH) : value;
+  value.length > MAX_ITEM_FIELD_LENGTH
+    ? value.slice(0, MAX_ITEM_FIELD_LENGTH)
+    : value;
 
 const normalizeCartItem = (value: unknown): NormalizedCartItem | null => {
   if (!value || typeof value !== "object") return null;
@@ -79,9 +81,13 @@ const normalizeCartItem = (value: unknown): NormalizedCartItem | null => {
   if (!Number.isFinite(quantity) || quantity <= 0) return null;
 
   const size =
-    typeof entry.size === "string" && entry.size.trim().length ? entry.size.trim() : undefined;
+    typeof entry.size === "string" && entry.size.trim().length
+      ? entry.size.trim()
+      : undefined;
   const color =
-    typeof entry.color === "string" && entry.color.trim().length ? entry.color.trim() : undefined;
+    typeof entry.color === "string" && entry.color.trim().length
+      ? entry.color.trim()
+      : undefined;
 
   let productId = "";
   let titleSource: unknown = "";
@@ -96,7 +102,9 @@ const normalizeCartItem = (value: unknown): NormalizedCartItem | null => {
     }
 
     titleSource =
-      typeof legacy.title === "string" && legacy.title.trim() ? legacy.title : entry.title ?? "";
+      typeof legacy.title === "string" && legacy.title.trim()
+        ? legacy.title
+        : (entry.title ?? "");
 
     price = asNumber(legacy.price, asNumber(entry.unitPrice ?? entry.price, 0));
   } else {
@@ -111,7 +119,8 @@ const normalizeCartItem = (value: unknown): NormalizedCartItem | null => {
   }
 
   const normalizedTitle = (() => {
-    if (typeof titleSource === "string" && titleSource.trim()) return truncateField(titleSource.trim());
+    if (typeof titleSource === "string" && titleSource.trim())
+      return truncateField(titleSource.trim());
     const fallback = String(titleSource ?? "").trim();
     return truncateField(fallback || "Article");
   })();
@@ -126,7 +135,9 @@ const normalizeCartItem = (value: unknown): NormalizedCartItem | null => {
   };
 };
 
-const getNormalizedCartItems = (body: CheckoutRequestBody): NormalizedCartItem[] => {
+const getNormalizedCartItems = (
+  body: CheckoutRequestBody,
+): NormalizedCartItem[] => {
   const candidates = [body?.cartItems, body?.items, body?.lines];
   const normalized: NormalizedCartItem[] = [];
 
@@ -152,7 +163,9 @@ const toStripeAmount = (amount: number) => {
 export async function startStorefrontCheckout(body: CheckoutRequestBody) {
   const cartItems = getNormalizedCartItems(body);
   const clerkId =
-    typeof body?.customer?.clerkId === "string" ? body.customer.clerkId.trim() : "";
+    typeof body?.customer?.clerkId === "string"
+      ? body.customer.clerkId.trim()
+      : "";
 
   if (!cartItems.length || !clerkId) {
     throw new CheckoutError("Not Enough Data To Checkout", 400, {
@@ -190,10 +203,16 @@ export async function startStorefrontCheckout(body: CheckoutRequestBody) {
   }
 
   const normalizedShip =
-    String(body?.shippingOption || "").toUpperCase() === "EXPRESS" ? "EXPRESS" : "FREE";
+    String(body?.shippingOption || "").toUpperCase() === "EXPRESS"
+      ? "EXPRESS"
+      : "FREE";
   const shippingMap = {
     FREE: { id: "FREE_DELIVERY", amount: 0, label: "Livraison standard" },
-    EXPRESS: { id: "EXPRESS_DELIVERY", amount: 10, label: "Livraison express" },
+    EXPRESS: {
+      id: "EXPRESS_DELIVERY",
+      amount: 10,
+      label: "Livraison express",
+    },
   } as const;
 
   const chosen = shippingMap[normalizedShip];
