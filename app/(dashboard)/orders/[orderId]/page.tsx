@@ -68,7 +68,29 @@ const OrderDetails = async ({ params }: { params: Promise<{ orderId: string }> }
     (sum, item) => sum + Number(item.unitPrice ?? 0) * Number(item.quantity ?? 0),
     0,
   );
-  const shippingAmount = Number(orderDetails?.shippingAmount ?? 0);
+  const shippingMethod = (() => {
+    const explicit = typeof orderDetails?.shippingMethod === "string"
+      ? orderDetails.shippingMethod.toUpperCase()
+      : "";
+    if (explicit === "EXPRESS" || explicit === "FREE") return explicit;
+    const rate = typeof orderDetails?.shippingRate === "string"
+      ? orderDetails.shippingRate.toUpperCase()
+      : "";
+    if (rate.includes("EXPRESS")) return "EXPRESS";
+    if (rate.includes("FREE")) return "FREE";
+    return "";
+  })();
+
+  const rawShippingAmount = Number(orderDetails?.shippingAmount);
+  const shippingAmount = (() => {
+    if (Number.isFinite(rawShippingAmount) && rawShippingAmount > 0) {
+      return Number(rawShippingAmount.toFixed(2));
+    }
+    if (shippingMethod === "EXPRESS") return 10;
+    if (shippingMethod === "FREE") return 0;
+    if (Number.isFinite(rawShippingAmount)) return Number(rawShippingAmount.toFixed(2));
+    return 0;
+  })();
   const displayTotal = Number.isFinite(subtotalFromProducts)
     ? Number((subtotalFromProducts + shippingAmount).toFixed(2))
     : Number(orderDetails?.totalAmount ?? 0);
@@ -192,6 +214,12 @@ const OrderDetails = async ({ params }: { params: Promise<{ orderId: string }> }
           Shipping Rate{" "}
           <span className="body-medium text-mbg-green uppercase">
             {orderDetails?.shippingRate ?? "N/A"}
+          </span>
+        </p>
+        <p className="body-medium text-mbg-black mt-3 uppercase">
+          Shipping Rate Amount{" "}
+          <span className="body-medium text-mbg-green uppercase">
+            € {shippingAmount.toFixed(2)}
           </span>
         </p>
 
